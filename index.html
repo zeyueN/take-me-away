@@ -189,7 +189,7 @@
         for (let i = 0; i < totalImages; i++) {
             const img = new Image();
             img.crossOrigin = "Anonymous"; // Handle CORS if needed
-            img.src = `https://raw.githubusercontent.com/YOUR_USERNAME/YOUR_REPO/main/albums/${d.slug}/photo${i + 1}.jpg`;
+            img.src = `https://raw.githubusercontent.com/zeyueN/take-my-away/main/albums/${d.slug}/photo${i + 1}.jpg`;
             img.onload = () => {
                 loadedImages++;
                 progress = (loadedImages / totalImages) * 100;
