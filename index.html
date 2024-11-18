@@ -165,43 +165,66 @@
         }
     }
 
-    function enableFisheye(d) {
-        d.enabled = true;
+// Replace the image loading section with this debug-friendly version
+function enableFisheye(d) {
+    d.enabled = true;
 
-        const that = this;
-        const link = that.parentNode;
-        const div = link.parentNode;
-        let touchtime;
+    const that = this;
+    const normalWidth = width / d.size;
+    const imageWidth = Math.ceil(normalWidth * pixelRatio);
+    const imageHeight = height;
+    let desiredDistortion = 0;
+    let desiredFocus;
+    let progress = 0;
+    let idle = true;
 
-        const normalWidth = width / d.size;
-        const imageWidth = Math.ceil(normalWidth * pixelRatio);
-        const imageHeight = height;
-        let desiredDistortion = 0;
-        let desiredFocus;
-        let progress = 0;
-        let idle = true;
+    // Debug info
+    console.log('Loading album:', d.slug);
+    console.log('Number of images:', d.size);
 
-        // Load and cache images with loading progress
-        const images = [];
-        let loadedImages = 0;
-        const totalImages = d.size;
+    // Load and cache images with loading progress and error handling
+    const images = [];
+    let loadedImages = 0;
+    const totalImages = d.size;
 
-        for (let i = 0; i < totalImages; i++) {
-            const img = new Image();
-            img.crossOrigin = "Anonymous"; // Handle CORS if needed
-            img.src = `https://raw.githubusercontent.com/zeyueN/take-my-away/main/albums/${d.slug}/photo${i + 1}.jpg`;
-            img.onload = () => {
-                loadedImages++;
-                progress = (loadedImages / totalImages) * 100;
-                loadingBar.style("width", progress + "%");
-                
-                if (loadedImages === totalImages) {
-                    loadingBar.remove();
-                    initialize();
-                }
-            };
-            images.push(img);
-        }
+    function constructImagePath(index) {
+        // Adjust these paths based on your actual repository structure
+        const baseUrl = window.location.hostname.includes('github.io') 
+            ? `/take-me-away` // For username.github.io/your-repo-name
+            : ''; // For custom domain or local development
+        
+        return `${baseUrl}/albums/${d.slug}/photo${index + 1}.jpg`;
+    }
+
+    for (let i = 0; i < totalImages; i++) {
+        const img = new Image();
+        const imagePath = constructImagePath(i);
+        
+        console.log(`Attempting to load image: ${imagePath}`);
+        
+        img.onload = () => {
+            console.log(`Successfully loaded: ${imagePath}`);
+            loadedImages++;
+            progress = (loadedImages / totalImages) * 100;
+            loadingBar.style("width", progress + "%");
+            
+            if (loadedImages === totalImages) {
+                console.log('All images loaded successfully');
+                loadingBar.remove();
+                initialize();
+            }
+        };
+
+        img.onerror = (e) => {
+            console.error(`Failed to load image: ${imagePath}`);
+            console.error('Error details:', e);
+            // Optionally load a placeholder image
+            img.src = '/placeholder.jpg';
+        };
+
+        img.src = imagePath;
+        images.push(img);
+    }
 
         const x = fisheye()
             .distortion(0)
