@@ -15,12 +15,14 @@
         .collection {
             margin-bottom: 40px;
             position: relative;
+            min-height: 600px;
         }
         
         .collection canvas {
             width: 100%;
             height: auto;
             cursor: pointer;
+            max-height: none;
         }
         
         .description {
@@ -79,8 +81,8 @@
 
 <script>
 (function() {
-    let width,
-        height = 225;
+    let width;
+    let height = 600;
 
     const graphic = d3.select(".graphic");
     
@@ -256,9 +258,14 @@ function enableFisheye(d) {
     }
 
     function render() {
-        // Add requestAnimationFrame for smoother rendering
-        requestAnimationFrame(() => {
-            // Add check for context
+        // Throttle renders
+        if (this.renderTimeout) {
+            return;
+        }
+        
+        this.renderTimeout = setTimeout(() => {
+            this.renderTimeout = null;
+            
             if (!d.context) {
                 console.error('No context available');
                 return;
@@ -267,33 +274,52 @@ function enableFisheye(d) {
             const context = d.context;
             context.clearRect(0, 0, width * storeRatio, height * storeRatio);
 
+            // Calculate visible range
+            const viewportStart = 0;
+            const viewportEnd = width;
+            
             // Only render images that are within or near the viewport
             for (let i = 0; i < d.size; i++) {
                 const x0 = x(i * normalWidth);
                 const x1 = x((i + 1) * normalWidth);
                 
                 // Skip rendering if the image is completely outside the viewport
-                if (x1 < 0 || x0 > width) continue;
+                if (x1 < viewportStart - normalWidth || x0 > viewportEnd + normalWidth) {
+                    continue;
+                }
                 
                 const dx = Math.min(imageWidth, x1 - x0);
                 
-                // Draw image with proper scaling
-                context.drawImage(
-                    images[i],
-                    0, 0, images[i].width, images[i].height,  // source rectangle
-                    x0 * storeRatio, 0, dx * storeRatio, height * storeRatio  // destination rectangle
-                );
-                
-                // Draw separator line
-                context.beginPath();
-                context.moveTo(x0 * storeRatio, 0);
-                context.lineTo(x0 * storeRatio, height * storeRatio);
-                context.stroke();
+                try {
+                    const img = images[i];
+                    // Calculate dimensions that preserve aspect ratio
+                    const imgAspectRatio = img.width / img.height;
+                    const targetHeight = height;  // Use the canvas height as max height
+                    const targetWidth = targetHeight * imgAspectRatio;
+                    
+                    // Center the image horizontally in its slot
+                    const xOffset = x0 + (dx - targetWidth) / 2;
+                    
+                    context.drawImage(
+                        img,
+                        0, 0, img.width, img.height,  // Source rectangle
+                        xOffset * storeRatio, 0, targetWidth * storeRatio, targetHeight * storeRatio  // Destination rectangle
+                    );
+                    
+                    // Only draw separator lines if they're visible
+                    if (x0 >= viewportStart - 1 && x0 <= viewportEnd + 1) {
+                        context.beginPath();
+                        context.moveTo(x0 * storeRatio, 0);
+                        context.lineTo(x0 * storeRatio, height * storeRatio);
+                        context.stroke();
+                    }
+                } catch (e) {
+                    console.error('Error rendering image', i, e);
+                }
             }
 
-            // Draw border
             context.strokeRect(0, 0, width * storeRatio, height * storeRatio);
-        });
+        }, 16); // Limit to ~60fps
     }
 
     function move() {
