@@ -170,29 +170,18 @@ function enableFisheye(d) {
     d.enabled = true;
 
     const that = this;
-    // Get context immediately when enabling
-    d.context = that.getContext("2d");
-    d.context.scale(storeRatio, storeRatio);
-    d.context.strokeStyle = "rgba(0,0,0,0.8)";
-
     const normalWidth = width / d.size;
     const imageWidth = Math.ceil(normalWidth * pixelRatio);
     const imageHeight = height;
     let desiredDistortion = 0;
-    let desiredFocus;
+    let desiredFocus = width / 2;
     let progress = 0;
     let idle = true;
-    let touchtime = 0;
-    
-    // Create a temporary link element
-    const link = document.createElement('a');
-    link.style.display = 'none';
-    document.body.appendChild(link);
 
-    // Move the fisheye and annotation declarations up before they're used
     const x = fisheye()
         .distortion(0)
-        .extent([0, width]);
+        .extent([0, width])
+        .focus(width / 2);
 
     const annotation = annotations.selectAll("li");  // Changed from d3.select(div) to annotations
 
@@ -324,32 +313,19 @@ function enableFisheye(d) {
 
     function move() {
         if (idle) {
-            // Store the timer so we can stop it
-            let timer = null;
             idle = false;
-            
-            timer = d3.timer(function() {
+            d3.timer(function() {
                 const currentDistortion = x.distortion();
                 const currentFocus = currentDistortion ? x.focus() : desiredFocus;
                 
-                // Check if we've reached the desired state
-                const isComplete = Math.abs(desiredDistortion - currentDistortion) < .01 && 
-                                 Math.abs(desiredFocus - currentFocus) < .5;
+                idle = Math.abs(desiredDistortion - currentDistortion) < .01 && 
+                       Math.abs(desiredFocus - currentFocus) < .5;
                 
-                if (isComplete) {
-                    idle = true;
-                    // Set final values exactly
-                    x.distortion(desiredDistortion);
-                    x.focus(desiredFocus);
-                    render();
-                    return true;  // Stop the timer
-                }
-                
-                x.distortion(currentDistortion + (desiredDistortion - currentDistortion) * .14);
-                x.focus(currentFocus + (desiredFocus - currentFocus) * .14);
+                x.distortion(idle ? desiredDistortion : currentDistortion + (desiredDistortion - currentDistortion) * .14);
+                x.focus(idle ? desiredFocus : currentFocus + (desiredFocus - currentFocus) * .14);
                 
                 render();
-                return false;  // Continue the timer
+                return idle;
             });
         }
     }
