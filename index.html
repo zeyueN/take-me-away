@@ -161,25 +161,18 @@ function enableFisheye(d) {
         .extent([0, width])
         .focus(width / 2);
 
-    const annotation = annotations.selectAll("li");  // Changed from d3.select(div) to annotations
-
-    // Debug info
-    console.log('Loading album:', d.slug);
-    console.log('Number of images:', d.size);
+    const annotation = annotations.selectAll("li");
 
     // Load and cache images with loading progress and error handling
     const images = new Array(d.size).fill(null);
     let loadedImages = 0;
     const totalImages = d.size;
 
-    console.log(`Starting to load ${totalImages} images for ${d.slug}`);
-
     function constructImagePath(index) {
         const baseUrl = window.location.hostname.includes('github.io') 
             ? `/take-me-away` 
             : '';
         const path = `${baseUrl}/albums/${d.slug}/photo${index + 1}.jpg`;
-        console.log(`Constructing path: ${path}`);
         return path;
     }
 
@@ -189,25 +182,58 @@ function enableFisheye(d) {
         const index = i;
         
         img.onload = () => {
-            console.log(`Loaded image ${index + 1}/${totalImages}: ${imagePath}`);
-            console.log(`Image dimensions: ${img.width}x${img.height}`);
-            images[index] = img;
-            loadedImages++;
-            progress = (loadedImages / totalImages) * 100;
-            loadingBar.style("width", progress + "%");
+            // Create a canvas to process the image
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
             
-            if (loadedImages === totalImages) {
-                console.log('All images loaded. Final array:', images);
-                loadingBar.remove();
-                initialize();
+            // For portrait images, crop to center square
+            if (img.height > img.width) {
+                const size = img.width;  // Use width as the square size
+                const startY = (img.height - size) / 2;  // Center vertically
+                
+                canvas.width = size;
+                canvas.height = size;
+                
+                // Draw only the center square portion
+                ctx.drawImage(img, 
+                    0, startY, size, size,  // Source rectangle
+                    0, 0, size, size        // Destination rectangle
+                );
+                
+                // Create new image from canvas
+                const squareImg = new Image();
+                squareImg.onload = () => {
+                    images[index] = squareImg;
+                    loadedImages++;
+                    progress = (loadedImages / totalImages) * 100;
+                    loadingBar.style("width", progress + "%");
+                    
+                    if (loadedImages === totalImages) {
+                        loadingBar.remove();
+                        initialize();
+                    }
+                    render();
+                };
+                squareImg.src = canvas.toDataURL();
+            } else {
+                // For landscape or square images, use as is
+                images[index] = img;
+                loadedImages++;
+                progress = (loadedImages / totalImages) * 100;
+                loadingBar.style("width", progress + "%");
+                
+                if (loadedImages === totalImages) {
+                    loadingBar.remove();
+                    initialize();
+                }
+                render();
             }
-            render(); // Render as each image loads
         };
 
         img.onerror = (e) => {
             console.error(`Failed to load image ${index + 1}: ${imagePath}`);
             console.error('Error details:', e);
-            loadedImages++; // Still increment to avoid hanging
+            loadedImages++;
         };
 
         img.src = imagePath;
