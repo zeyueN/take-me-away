@@ -247,20 +247,18 @@ function enableFisheye(d) {
                     const img = images[i];
                     if (!img || !img.complete) continue;
 
-                    const heightScale = height / img.height;
-                    const widthScale = slotWidth / img.width;
-                    const scale = Math.min(heightScale, widthScale);
-                    
+                    // Calculate scaling to fill height while maintaining aspect ratio
+                    const scale = height / img.height;
                     const scaledWidth = img.width * scale;
-                    const scaledHeight = img.height * scale;
                     
-                    const xOffset = x0 + (slotWidth - scaledWidth) / 2;
-                    const yOffset = (height - scaledHeight) / 2;
+                    // Calculate how much of the image width to use
+                    const sourceWidth = slotWidth / scale;
+                    const sourceX = (img.width - sourceWidth) / 2;
 
                     context.drawImage(
                         img,
-                        0, 0, img.width, img.height,
-                        xOffset, yOffset, scaledWidth, scaledHeight
+                        sourceX, 0, sourceWidth, img.height,  // Source rectangle
+                        x0, 0, slotWidth, height              // Destination rectangle
                     );
                     
                     context.beginPath();
@@ -277,54 +275,36 @@ function enableFisheye(d) {
     }
 
     function move() {
-        if (!idle) return; // Don't start a new animation if one is in progress
-        
-        idle = false;
-        
-        // Clear any existing animation
-        if (this.moveTimer) {
-            this.moveTimer.stop();
-        }
-        
-        const startDistortion = x.distortion();
-        const startFocus = x.focus();
-        
-        // Only log hover transitions
-        if (this.isHoverTransition) {
-            console.log('Animation starting:', {
-                type: this.isMouseOut ? 'mouseout' : 'mouseover',
-                duration: this.isMouseOut ? 2000 : 100
+        if (idle) {
+            idle = false;
+            
+            if (this.moveTimer) {
+                this.moveTimer.stop();
+            }
+            
+            const startDistortion = x.distortion();
+            const startFocus = x.focus();
+            
+            // Changed duration to 200ms
+            const duration = 200;
+            
+            this.moveTimer = d3.timer((elapsed) => {
+                const t = Math.min(1, elapsed / duration);
+                const progress = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+                
+                x.distortion(startDistortion + (desiredDistortion - startDistortion) * progress);
+                x.focus(startFocus + (desiredFocus - startFocus) * progress);
+                render();
+                
+                if (t >= 1) {
+                    idle = true;
+                    return true;
+                }
             });
         }
-        
-        const duration = this.isHoverTransition 
-            ? (this.isMouseOut ? 2000 : 100)
-            : 100;
-        
-        this.moveTimer = d3.timer((elapsed) => {
-            const t = Math.min(1, elapsed / duration);
-            const progress = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-            
-            x.distortion(startDistortion + (desiredDistortion - startDistortion) * progress);
-            x.focus(startFocus + (desiredFocus - startFocus) * progress);
-            render();
-            
-            if (t >= 1) {
-                idle = true;
-                // Only reset flags if this was a hover transition
-                if (this.isHoverTransition) {
-                    this.isHoverTransition = false;
-                    this.isMouseOut = false;
-                }
-                return true;
-            }
-        });
     }
 
     function mouseover(event) {
-        console.log('mouseover triggered');
-        this.isHoverTransition = true;
-        this.isMouseOut = false;
         desiredDistortion = imageWidth / normalWidth - 1;
         if (event) {
             mousemove(event);
@@ -332,9 +312,6 @@ function enableFisheye(d) {
     }
 
     function mouseout(event) {
-        console.log('mouseout triggered');
-        this.isHoverTransition = true;
-        this.isMouseOut = true;
         desiredDistortion = 0;
         if (event) {
             mousemove(event);
@@ -343,6 +320,7 @@ function enableFisheye(d) {
 
     function mousemove(event) {
         if (!event) return;
+        
         const [mouseX] = d3.pointer(event, that);
         desiredFocus = Math.max(0, Math.min(width - 1e-6, mouseX));
         move();
