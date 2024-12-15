@@ -56,6 +56,8 @@
 
 <script>
 (function() {
+    const DISTORTION_FACTOR = 6;  // Adjust this value to control distortion amount
+
     let width;
     let height = 600;
 
@@ -305,7 +307,7 @@ function enableFisheye(d) {
     }
 
     function mouseover(event) {
-        desiredDistortion = imageWidth / normalWidth - 1;
+        desiredDistortion = (imageWidth / normalWidth - 1) * DISTORTION_FACTOR;
         if (event) {
             mousemove(event);
         }
@@ -362,7 +364,8 @@ function fisheye() {
         focus = 0;
 
     function G(x) {
-        return (distortion + 1) * x / (distortion * x + 1);
+        const d = distortion * (DISTORTION_FACTOR/3);  // Reduced factor division to maintain squeeze
+        return (d + 1) * x / ((d * x) + 1);
     }
 
     function fisheye(x) {
