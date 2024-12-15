@@ -57,6 +57,7 @@
 <script>
 (function() {
     const DISTORTION_FACTOR = 6;  // Adjust this value to control distortion amount
+    const FALLOFF_FACTOR = 1.5;     // Reduced from 2 to 1.5 for gentler falloff
 
     let width;
     let height = 600;
@@ -390,8 +391,14 @@ function fisheye() {
         focus = 0;
 
     function G(x) {
-        const d = distortion * (DISTORTION_FACTOR/3);  // Reduced factor division to maintain squeeze
-        return (d + 1) * x / ((d * x) + 1);
+        // Calculate normalized distance from focus point
+        const distance = Math.abs(x);
+        // Reduced base distortion and gentler falloff
+        const baseDistortion = distortion * (DISTORTION_FACTOR/2); // Added division by 2 to reduce base distortion
+        const falloffCurve = Math.exp(-distance * FALLOFF_FACTOR);
+        const adjustedDistortion = baseDistortion * (falloffCurve + 0.05);  // Reduced constant from 0.1 to 0.05
+        
+        return (adjustedDistortion + 1) * x / ((adjustedDistortion * x) + 1);
     }
 
     function fisheye(x) {
