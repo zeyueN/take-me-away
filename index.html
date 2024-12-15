@@ -30,27 +30,6 @@
             font-family: sans-serif;
         }
         
-        .annotations {
-            position: relative;
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-        
-        .annotations li {
-            position: absolute;
-            top: 0;
-        }
-        
-        .annotation {
-            position: absolute;
-            font-size: 12px;
-            background: rgba(255, 255, 255, 0.9);
-            padding: 2px 5px;
-            border-radius: 3px;
-            white-space: nowrap;
-        }
-        
         @media (max-width: 768px) {
             .gallery-container {
                 padding: 10px;
@@ -71,10 +50,6 @@
             <!-- Album template -->
             <div class="collection" data-slug="album-1" data-size="12">
                 <div class="description">Sample Album</div>
-                <ul class="annotations">
-                    <li data-range="[0]"><div class="annotation">First photo</div></li>
-                    <li data-range="[9]"><div class="annotation">Last photo</div></li>
-                </ul>
             </div>
         </div>
     </div>
@@ -263,8 +238,6 @@ function enableFisheye(d) {
             const context = d.context;
             context.clearRect(0, 0, width * storeRatio, height * storeRatio);
 
-            console.log(`Rendering with canvas dimensions: ${width}x${height}`);
-
             for (let i = 0; i < d.size; i++) {
                 const x0 = x(i * normalWidth);
                 const x1 = x((i + 1) * normalWidth);
@@ -272,40 +245,24 @@ function enableFisheye(d) {
                 
                 try {
                     const img = images[i];
-                    if (!img || !img.complete) {
-                        console.log(`Skipping image ${i}: not loaded`);
-                        continue;
-                    }
+                    if (!img || !img.complete) continue;
 
-                    // Calculate both height-based and width-based scaling
                     const heightScale = height / img.height;
                     const widthScale = slotWidth / img.width;
-                    
-                    // Use the smaller scale to ensure image fits both dimensions
                     const scale = Math.min(heightScale, widthScale);
                     
                     const scaledWidth = img.width * scale;
                     const scaledHeight = img.height * scale;
                     
-                    // Center the image vertically and horizontally in its slot
                     const xOffset = x0 + (slotWidth - scaledWidth) / 2;
                     const yOffset = (height - scaledHeight) / 2;
-                    
-                    console.log(`Drawing image ${i}:`, {
-                        originalDimensions: `${img.width}x${img.height}`,
-                        scaledDimensions: `${scaledWidth}x${scaledHeight}`,
-                        position: `x: ${xOffset}, y: ${yOffset}`,
-                        slot: `${x0}-${x1}`,
-                        slotWidth: slotWidth
-                    });
 
                     context.drawImage(
                         img,
-                        0, 0, img.width, img.height,  // Source rectangle
-                        xOffset, yOffset, scaledWidth, scaledHeight  // Destination rectangle
+                        0, 0, img.width, img.height,
+                        xOffset, yOffset, scaledWidth, scaledHeight
                     );
                     
-                    // Draw separator lines
                     context.beginPath();
                     context.moveTo(x0, 0);
                     context.lineTo(x0, height);
@@ -320,25 +277,54 @@ function enableFisheye(d) {
     }
 
     function move() {
-        if (idle) {
-            idle = false;
-            d3.timer(function() {
-                const currentDistortion = x.distortion();
-                const currentFocus = currentDistortion ? x.focus() : desiredFocus;
-                
-                idle = Math.abs(desiredDistortion - currentDistortion) < .01 && 
-                       Math.abs(desiredFocus - currentFocus) < .5;
-                
-                x.distortion(idle ? desiredDistortion : currentDistortion + (desiredDistortion - currentDistortion) * .14);
-                x.focus(idle ? desiredFocus : currentFocus + (desiredFocus - currentFocus) * .14);
-                
-                render();
-                return idle;
+        if (!idle) return; // Don't start a new animation if one is in progress
+        
+        idle = false;
+        
+        // Clear any existing animation
+        if (this.moveTimer) {
+            this.moveTimer.stop();
+        }
+        
+        const startDistortion = x.distortion();
+        const startFocus = x.focus();
+        
+        // Only log hover transitions
+        if (this.isHoverTransition) {
+            console.log('Animation starting:', {
+                type: this.isMouseOut ? 'mouseout' : 'mouseover',
+                duration: this.isMouseOut ? 2000 : 100
             });
         }
+        
+        const duration = this.isHoverTransition 
+            ? (this.isMouseOut ? 2000 : 100)
+            : 100;
+        
+        this.moveTimer = d3.timer((elapsed) => {
+            const t = Math.min(1, elapsed / duration);
+            const progress = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+            
+            x.distortion(startDistortion + (desiredDistortion - startDistortion) * progress);
+            x.focus(startFocus + (desiredFocus - startFocus) * progress);
+            render();
+            
+            if (t >= 1) {
+                idle = true;
+                // Only reset flags if this was a hover transition
+                if (this.isHoverTransition) {
+                    this.isHoverTransition = false;
+                    this.isMouseOut = false;
+                }
+                return true;
+            }
+        });
     }
 
     function mouseover(event) {
+        console.log('mouseover triggered');
+        this.isHoverTransition = true;
+        this.isMouseOut = false;
         desiredDistortion = imageWidth / normalWidth - 1;
         if (event) {
             mousemove(event);
@@ -346,6 +332,9 @@ function enableFisheye(d) {
     }
 
     function mouseout(event) {
+        console.log('mouseout triggered');
+        this.isHoverTransition = true;
+        this.isMouseOut = true;
         desiredDistortion = 0;
         if (event) {
             mousemove(event);
