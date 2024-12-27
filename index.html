@@ -56,8 +56,8 @@
 
 <script>
 (function() {
-    const DISTORTION_FACTOR = 6;  // Adjust this value to control distortion amount
-    const FALLOFF_FACTOR = 1.5;     // Reduced from 2 to 1.5 for gentler falloff
+    const DISTORTION_FACTOR = 6;  // Base distortion factor
+    const FALLOFF_FACTOR = 1.5;   // Base falloff factor
 
     let width;
     let height;
@@ -113,11 +113,14 @@
 
     function resize() {
         width = parseInt(graphic.style("width"));
-        height = window.innerHeight - 40;  // Subtract 20px to make it slightly shorter
-        console.log(`Resize called. New width: ${width}, height: ${height}`);
+        height = window.innerHeight - 40;
         
-        annotations.style("width", width + "px");
-
+        // Add debug logging
+        console.log(`Resize called. New width: ${width}, height: ${height}`);
+        console.log(`Window DPI scaling: ${window.devicePixelRatio}`);
+        console.log(`Screen width: ${window.screen.width}`);
+        console.log(`Screen height: ${window.screen.height}`);
+        
         canvas
             .attr("width", width)
             .attr("height", height)
@@ -126,7 +129,10 @@
             .each(function(d) {
                 d.context = this.getContext("2d");
                 d.context.strokeStyle = "rgba(0,0,0,0.8)";
-                if (d.enabled) d.resize();
+                if (d.enabled) {
+                    console.log('Resizing enabled canvas');
+                    d.resize();
+                }
             });
 
         scroll();
@@ -145,73 +151,88 @@
         }
     }
 
-// Replace the image loading section with this debug-friendly version
-function enableFisheye(d) {
-    d.enabled = true;
+    function enableFisheye(d) {
+        d.enabled = true;
 
-    const that = this;
-    const normalWidth = width / d.size;
-    const imageWidth = Math.ceil(normalWidth * pixelRatio);
-    const imageHeight = height;
-    let desiredDistortion = 0;
-    let desiredFocus = width / 2;
-    let progress = 0;
-    let idle = true;
-    let touchtime = 0;
+        const that = this;
+        const dpr = window.devicePixelRatio || 1;
+        const normalWidth = width / d.size;
+        // Back to previous multipliers
+        const imageWidth = Math.ceil(normalWidth * (dpr >= 1.5 ? dpr * 0.8 : dpr * 1.5));
+        const imageHeight = height;
+        let desiredDistortion = 0;
+        let desiredFocus = width / 2;
+        let progress = 0;
+        let idle = true;
+        let touchtime = 0;
 
-    // Add temporary link element for handling clicks
-    const link = document.createElement('a');
-    link.style.display = 'none';
-    document.body.appendChild(link);
+        // Add temporary link element for handling clicks
+        const link = document.createElement('a');
+        link.style.display = 'none';
+        document.body.appendChild(link);
 
-    const x = fisheye()
-        .distortion(0)
-        .extent([0, width])
-        .focus(width / 2);
+        const x = fisheye()
+            .distortion(0)
+            .extent([0, width])
+            .focus(width / 2);
 
-    const annotation = annotations.selectAll("li");
+        const annotation = annotations.selectAll("li");
 
-    // Load and cache images with loading progress and error handling
-    const images = new Array(d.size).fill(null);
-    let loadedImages = 0;
-    const totalImages = d.size;
+        // Load and cache images with loading progress and error handling
+        const images = new Array(d.size).fill(null);
+        let loadedImages = 0;
+        const totalImages = d.size;
 
-    function constructImagePath(index) {
-        const baseUrl = window.location.hostname.includes('github.io') 
-            ? `/take-me-away` 
-            : '';
-        const path = `${baseUrl}/albums/${d.slug}/photo${index + 1}.jpg`;
-        return path;
-    }
+        function constructImagePath(index) {
+            const baseUrl = window.location.hostname.includes('github.io') 
+                ? `/take-me-away` 
+                : '';
+            const path = `${baseUrl}/albums/${d.slug}/photo${index + 1}.jpg`;
+            return path;
+        }
 
-    for (let i = 0; i < totalImages; i++) {
-        const img = new Image();
-        const imagePath = constructImagePath(i);
-        const index = i;
-        
-        img.onload = () => {
-            // Create a canvas to process the image
-            const canvas = document.createElement('canvas');
-            const ctx = canvas.getContext('2d');
+        for (let i = 0; i < totalImages; i++) {
+            const img = new Image();
+            const imagePath = constructImagePath(i);
+            const index = i;
             
-            // For portrait images, crop to center square
-            if (img.height > img.width) {
-                const size = img.width;  // Use width as the square size
-                const startY = (img.height - size) / 2;  // Center vertically
+            img.onload = () => {
+                // Create a canvas to process the image
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
                 
-                canvas.width = size;
-                canvas.height = size;
-                
-                // Draw only the center square portion
-                ctx.drawImage(img, 
-                    0, startY, size, size,  // Source rectangle
-                    0, 0, size, size        // Destination rectangle
-                );
-                
-                // Create new image from canvas
-                const squareImg = new Image();
-                squareImg.onload = () => {
-                    images[index] = squareImg;
+                // For portrait images, crop to center square
+                if (img.height > img.width) {
+                    const size = img.width;  // Use width as the square size
+                    const startY = (img.height - size) / 2;  // Center vertically
+                    
+                    canvas.width = size;
+                    canvas.height = size;
+                    
+                    // Draw only the center square portion
+                    ctx.drawImage(img, 
+                        0, startY, size, size,  // Source rectangle
+                        0, 0, size, size        // Destination rectangle
+                    );
+                    
+                    // Create new image from canvas
+                    const squareImg = new Image();
+                    squareImg.onload = () => {
+                        images[index] = squareImg;
+                        loadedImages++;
+                        progress = (loadedImages / totalImages) * 100;
+                        loadingBar.style("width", progress + "%");
+                        
+                        if (loadedImages === totalImages) {
+                            loadingBar.remove();
+                            initialize();
+                        }
+                        render();
+                    };
+                    squareImg.src = canvas.toDataURL();
+                } else {
+                    // For landscape or square images, use as is
+                    images[index] = img;
                     loadedImages++;
                     progress = (loadedImages / totalImages) * 100;
                     loadingBar.style("width", progress + "%");
@@ -221,226 +242,214 @@ function enableFisheye(d) {
                         initialize();
                     }
                     render();
-                };
-                squareImg.src = canvas.toDataURL();
-            } else {
-                // For landscape or square images, use as is
-                images[index] = img;
+                }
+            };
+
+            img.onerror = (e) => {
+                console.error(`Failed to load image ${index + 1}: ${imagePath}`);
+                console.error('Error details:', e);
                 loadedImages++;
-                progress = (loadedImages / totalImages) * 100;
-                loadingBar.style("width", progress + "%");
+            };
+
+            img.src = imagePath;
+        }
+
+        function initialize() {
+            d3.select(that)
+                .on("mousedown", mousedown)
+                .on("mouseover", mouseover)
+                .on("mousemove", mousemove)
+                .on("mouseout", mouseout)
+                .on("touchstart", touchstart)
+                .on("touchmove", mousemove)
+                .on("touchend", mouseout);
+
+            render();
+        }
+
+        function render() {
+            if (this.renderTimeout) return;
+            
+            this.renderTimeout = setTimeout(() => {
+                this.renderTimeout = null;
                 
-                if (loadedImages === totalImages) {
-                    loadingBar.remove();
-                    initialize();
+                if (!d.context) {
+                    console.error('No context available');
+                    return;
                 }
-                render();
+
+                const context = d.context;
+                context.clearRect(0, 0, width * storeRatio, height * storeRatio);
+
+                for (let i = 0; i < d.size; i++) {
+                    const x0 = x(i * normalWidth);
+                    const x1 = x((i + 1) * normalWidth);
+                    const slotWidth = x1 - x0;
+                    
+                    try {
+                        const img = images[i];
+                        if (!img || !img.complete) continue;
+
+                        // Calculate scaling to fill height while maintaining aspect ratio
+                        const scale = height / img.height;
+                        const scaledWidth = img.width * scale;
+                        
+                        // Calculate how much of the image width to use
+                        const sourceWidth = slotWidth / scale;
+                        const sourceX = (img.width - sourceWidth) / 2;
+
+                        context.drawImage(
+                            img,
+                            sourceX, 0, sourceWidth, img.height,  // Source rectangle
+                            x0, 0, slotWidth, height              // Destination rectangle
+                        );
+                        
+                        context.beginPath();
+                        context.moveTo(x0, 0);
+                        context.lineTo(x0, height);
+                        context.stroke();
+                    } catch (e) {
+                        console.error(`Error rendering image ${i}:`, e);
+                    }
+                }
+
+                context.strokeRect(0, 0, width, height);
+            }, 16);
+        }
+
+        function move() {
+            if (idle) {
+                idle = false;
+                
+                if (this.moveTimer) {
+                    this.moveTimer.stop();
+                }
+                
+                const startDistortion = x.distortion();
+                const startFocus = x.focus();
+                
+                // Changed duration to 200ms
+                const duration = 200;
+                
+                this.moveTimer = d3.timer((elapsed) => {
+                    const t = Math.min(1, elapsed / duration);
+                    const progress = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
+                    
+                    x.distortion(startDistortion + (desiredDistortion - startDistortion) * progress);
+                    x.focus(startFocus + (desiredFocus - startFocus) * progress);
+                    render();
+                    
+                    if (t >= 1) {
+                        idle = true;
+                        return true;
+                    }
+                });
             }
+        }
+
+        function mouseover(event) {
+            // Back to previous multipliers
+            const dprAdjustment = dpr >= 1.5 ? dpr * 0.8 : dpr * 1.5;
+            desiredDistortion = (imageWidth / normalWidth - 1) * DISTORTION_FACTOR * dprAdjustment;
+            if (event) {
+                mousemove(event);
+            }
+        }
+
+        function mouseout(event) {
+            desiredDistortion = 0;
+            if (event) {
+                mousemove(event);
+            }
+        }
+
+        function mousemove(event) {
+            if (!event) return;
+            
+            const [mouseX] = d3.pointer(event, that);
+            desiredFocus = Math.max(0, Math.min(width - 1e-6, mouseX));
+            move();
+        }
+
+        function mousedown(event) {
+            if (!event) return;
+            const m = Math.max(0, Math.min(width - 1e-6, d3.pointer(event, that)[0]));
+            let i;
+            // Find the correct image index
+            for (i = 0; i < d.size && x(i * normalWidth) < m; i++);
+            // Subtract 1 to correct the off-by-one error
+            i = Math.max(0, i - 1);
+            
+            // Construct the full image path
+            const imagePath = constructImagePath(i);
+            
+            // Open image in new tab/window
+            window.open(imagePath, '_blank');
+        }
+
+        function touchstart(event) {
+            event.preventDefault();
+            mouseover(event);
+            if (event.touches.length === 1) {
+                const now = Date.now();
+                if (now - touchtime < 500) mousedown(event);
+                touchtime = now;
+            }
+        }
+
+        d.resize = function() {
+            const f = x.focus() / x.extent()[1];
+            const d1 = imageWidth / normalWidth - 1;
+            const d0 = x.distortion() / d1;
+            normalWidth = width / d.size;
+            x.distortion(d0 * d1).extent([0, width]).focus(f * width);
+            render();
+        };
+    }
+
+    function fisheye() {
+        let min = 0,
+            max = 1,
+            distortion = 3,
+            focus = 0;
+
+        function G(x) {
+            // Calculate normalized distance from focus point
+            const distance = Math.abs(x);
+            // Reduced base distortion and gentler falloff
+            const baseDistortion = distortion * (DISTORTION_FACTOR/2); // Added division by 2 to reduce base distortion
+            const falloffCurve = Math.exp(-distance * FALLOFF_FACTOR);
+            const adjustedDistortion = baseDistortion * (falloffCurve + 0.05);  // Reduced constant from 0.1 to 0.05
+            
+            return (adjustedDistortion + 1) * x / ((adjustedDistortion * x) + 1);
+        }
+
+        function fisheye(x) {
+            const Dmax_x = (x < focus ? min : max) - focus;
+            const Dnorm_x = x - focus;
+            return G(Dnorm_x / Dmax_x) * Dmax_x + focus;
+        }
+
+        fisheye.extent = function(_) {
+            if (!arguments.length) return [min, max];
+            min = +_[0], max = +_[1];
+            return fisheye;
         };
 
-        img.onerror = (e) => {
-            console.error(`Failed to load image ${index + 1}: ${imagePath}`);
-            console.error('Error details:', e);
-            loadedImages++;
+        fisheye.distortion = function(_) {
+            if (!arguments.length) return distortion;
+            distortion = +_;
+            return fisheye;
         };
 
-        img.src = imagePath;
-    }
+        fisheye.focus = function(_) {
+            if (!arguments.length) return focus;
+            focus = +_;
+            return fisheye;
+        };
 
-    function initialize() {
-        d3.select(that)
-            .on("mousedown", mousedown)
-            .on("mouseover", mouseover)
-            .on("mousemove", mousemove)
-            .on("mouseout", mouseout)
-            .on("touchstart", touchstart)
-            .on("touchmove", mousemove)
-            .on("touchend", mouseout);
-
-        render();
-    }
-
-    function render() {
-        if (this.renderTimeout) return;
-        
-        this.renderTimeout = setTimeout(() => {
-            this.renderTimeout = null;
-            
-            if (!d.context) {
-                console.error('No context available');
-                return;
-            }
-
-            const context = d.context;
-            context.clearRect(0, 0, width * storeRatio, height * storeRatio);
-
-            for (let i = 0; i < d.size; i++) {
-                const x0 = x(i * normalWidth);
-                const x1 = x((i + 1) * normalWidth);
-                const slotWidth = x1 - x0;
-                
-                try {
-                    const img = images[i];
-                    if (!img || !img.complete) continue;
-
-                    // Calculate scaling to fill height while maintaining aspect ratio
-                    const scale = height / img.height;
-                    const scaledWidth = img.width * scale;
-                    
-                    // Calculate how much of the image width to use
-                    const sourceWidth = slotWidth / scale;
-                    const sourceX = (img.width - sourceWidth) / 2;
-
-                    context.drawImage(
-                        img,
-                        sourceX, 0, sourceWidth, img.height,  // Source rectangle
-                        x0, 0, slotWidth, height              // Destination rectangle
-                    );
-                    
-                    context.beginPath();
-                    context.moveTo(x0, 0);
-                    context.lineTo(x0, height);
-                    context.stroke();
-                } catch (e) {
-                    console.error(`Error rendering image ${i}:`, e);
-                }
-            }
-
-            context.strokeRect(0, 0, width, height);
-        }, 16);
-    }
-
-    function move() {
-        if (idle) {
-            idle = false;
-            
-            if (this.moveTimer) {
-                this.moveTimer.stop();
-            }
-            
-            const startDistortion = x.distortion();
-            const startFocus = x.focus();
-            
-            // Changed duration to 200ms
-            const duration = 200;
-            
-            this.moveTimer = d3.timer((elapsed) => {
-                const t = Math.min(1, elapsed / duration);
-                const progress = t < .5 ? 2 * t * t : -1 + (4 - 2 * t) * t;
-                
-                x.distortion(startDistortion + (desiredDistortion - startDistortion) * progress);
-                x.focus(startFocus + (desiredFocus - startFocus) * progress);
-                render();
-                
-                if (t >= 1) {
-                    idle = true;
-                    return true;
-                }
-            });
-        }
-    }
-
-    function mouseover(event) {
-        desiredDistortion = (imageWidth / normalWidth - 1) * DISTORTION_FACTOR;
-        if (event) {
-            mousemove(event);
-        }
-    }
-
-    function mouseout(event) {
-        desiredDistortion = 0;
-        if (event) {
-            mousemove(event);
-        }
-    }
-
-    function mousemove(event) {
-        if (!event) return;
-        
-        const [mouseX] = d3.pointer(event, that);
-        desiredFocus = Math.max(0, Math.min(width - 1e-6, mouseX));
-        move();
-    }
-
-    function mousedown(event) {
-        if (!event) return;
-        const m = Math.max(0, Math.min(width - 1e-6, d3.pointer(event, that)[0]));
-        let i;
-        // Find the correct image index
-        for (i = 0; i < d.size && x(i * normalWidth) < m; i++);
-        // Subtract 1 to correct the off-by-one error
-        i = Math.max(0, i - 1);
-        
-        // Construct the full image path
-        const imagePath = constructImagePath(i);
-        
-        // Open image in new tab/window
-        window.open(imagePath, '_blank');
-    }
-
-    function touchstart(event) {
-        event.preventDefault();
-        mouseover(event);
-        if (event.touches.length === 1) {
-            const now = Date.now();
-            if (now - touchtime < 500) mousedown(event);
-            touchtime = now;
-        }
-    }
-
-    d.resize = function() {
-        const f = x.focus() / x.extent()[1];
-        const d1 = imageWidth / normalWidth - 1;
-        const d0 = x.distortion() / d1;
-        normalWidth = width / d.size;
-        x.distortion(d0 * d1).extent([0, width]).focus(f * width);
-        render();
-    };
-}
-
-function fisheye() {
-    let min = 0,
-        max = 1,
-        distortion = 3,
-        focus = 0;
-
-    function G(x) {
-        // Calculate normalized distance from focus point
-        const distance = Math.abs(x);
-        // Reduced base distortion and gentler falloff
-        const baseDistortion = distortion * (DISTORTION_FACTOR/2); // Added division by 2 to reduce base distortion
-        const falloffCurve = Math.exp(-distance * FALLOFF_FACTOR);
-        const adjustedDistortion = baseDistortion * (falloffCurve + 0.05);  // Reduced constant from 0.1 to 0.05
-        
-        return (adjustedDistortion + 1) * x / ((adjustedDistortion * x) + 1);
-    }
-
-    function fisheye(x) {
-        const Dmax_x = (x < focus ? min : max) - focus;
-        const Dnorm_x = x - focus;
-        return G(Dnorm_x / Dmax_x) * Dmax_x + focus;
-    }
-
-    fisheye.extent = function(_) {
-        if (!arguments.length) return [min, max];
-        min = +_[0], max = +_[1];
         return fisheye;
-    };
-
-    fisheye.distortion = function(_) {
-        if (!arguments.length) return distortion;
-        distortion = +_;
-        return fisheye;
-    };
-
-    fisheye.focus = function(_) {
-        if (!arguments.length) return focus;
-        focus = +_;
-        return fisheye;
-    };
-
-    return fisheye;
-}
+    }
 })();
 </script>
 </body>
