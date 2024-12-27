@@ -165,7 +165,7 @@
         let idle = true;
         let touchtime = 0;
         let isTouching = false;
-        let touchEndTimer = null;
+        let touchEndTimer = null;  // Track touch end timer
         let lastTouchX = null;  // Track last touch position
         let hasMoved = false;   // Track if touch has moved
 
@@ -409,8 +409,6 @@
             desiredFocus = Math.max(0, Math.min(width - 1e-6, touchX));
             desiredDistortion = (imageWidth / normalWidth - 1) * DISTORTION_FACTOR * (dpr >= 1.5 ? dpr * 0.8 : dpr * 1.5);
             
-            console.log('Touch start:', { touchX, desiredFocus, desiredDistortion });
-            
             move();
         }
 
@@ -433,8 +431,6 @@
             }
             
             desiredFocus = Math.max(0, Math.min(width - 1e-6, touchX));
-            console.log('Touch move:', { touchX, desiredFocus });
-            
             move();
         }
 
@@ -458,12 +454,9 @@
             }
             touchEndTimer = setTimeout(() => {
                 desiredDistortion = 0;
-                console.log('Touch end collapse');
                 move();
                 touchEndTimer = null;
-            }, 250);
-            
-            console.log('Touch end');
+            }, 250);  // 250ms delay before collapse
         }
 
         d.resize = function() {
