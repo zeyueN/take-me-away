@@ -157,7 +157,6 @@
         const that = this;
         const dpr = window.devicePixelRatio || 1;
         const normalWidth = width / d.size;
-        // Back to previous multipliers
         const imageWidth = Math.ceil(normalWidth * (dpr >= 1.5 ? dpr * 0.8 : dpr * 1.5));
         const imageHeight = height;
         let desiredDistortion = 0;
@@ -165,6 +164,10 @@
         let progress = 0;
         let idle = true;
         let touchtime = 0;
+        let isTouching = false;
+        let touchEndTimer = null;
+        let lastTouchX = null;  // Track last touch position
+        let hasMoved = false;   // Track if touch has moved
 
         // Add temporary link element for handling clicks
         const link = document.createElement('a');
@@ -256,13 +259,14 @@
 
         function initialize() {
             d3.select(that)
-                .on("mousedown", mousedown)
-                .on("mouseover", mouseover)
-                .on("mousemove", mousemove)
-                .on("mouseout", mouseout)
-                .on("touchstart", touchstart)
-                .on("touchmove", mousemove)
-                .on("touchend", mouseout);
+                .on("mousedown.fisheye", mousedown)
+                .on("mouseover.fisheye", mouseover)
+                .on("mousemove.fisheye", mousemove)
+                .on("mouseout.fisheye", mouseout)
+                .on("touchstart.fisheye", touchstart)
+                .on("touchmove.fisheye", touchmove)
+                .on("touchend.fisheye", touchend)
+                .on("touchcancel.fisheye", touchend);  // Add touchcancel handler
 
             render();
         }
@@ -389,12 +393,77 @@
 
         function touchstart(event) {
             event.preventDefault();
-            mouseover(event);
-            if (event.touches.length === 1) {
-                const now = Date.now();
-                if (now - touchtime < 500) mousedown(event);
-                touchtime = now;
+            isTouching = true;
+            hasMoved = false;   // Reset movement flag
+            
+            if (touchEndTimer) {
+                clearTimeout(touchEndTimer);
+                touchEndTimer = null;
             }
+
+            const touch = event.touches[0];
+            const rect = that.getBoundingClientRect();
+            const touchX = touch.clientX - rect.left;
+            lastTouchX = touchX;  // Store initial touch position
+            
+            desiredFocus = Math.max(0, Math.min(width - 1e-6, touchX));
+            desiredDistortion = (imageWidth / normalWidth - 1) * DISTORTION_FACTOR * (dpr >= 1.5 ? dpr * 0.8 : dpr * 1.5);
+            
+            console.log('Touch start:', { touchX, desiredFocus, desiredDistortion });
+            
+            move();
+        }
+
+        function touchmove(event) {
+            if (!isTouching) return;
+            event.preventDefault();
+            
+            if (touchEndTimer) {
+                clearTimeout(touchEndTimer);
+                touchEndTimer = null;
+            }
+
+            const touch = event.touches[0];
+            const rect = that.getBoundingClientRect();
+            const touchX = touch.clientX - rect.left;
+            
+            // Check if touch has moved more than threshold
+            if (Math.abs(touchX - lastTouchX) > 5) {  // 5px movement threshold
+                hasMoved = true;
+            }
+            
+            desiredFocus = Math.max(0, Math.min(width - 1e-6, touchX));
+            console.log('Touch move:', { touchX, desiredFocus });
+            
+            move();
+        }
+
+        function touchend(event) {
+            event.preventDefault();
+            
+            // Only open image if touch hasn't moved significantly
+            if (!hasMoved && lastTouchX !== null) {
+                const i = Math.floor(lastTouchX / normalWidth);
+                if (i >= 0 && i < d.size) {
+                    const imagePath = constructImagePath(i);
+                    window.open(imagePath, '_blank');
+                }
+            }
+            
+            isTouching = false;
+            lastTouchX = null;  // Reset last touch position
+            
+            if (touchEndTimer) {
+                clearTimeout(touchEndTimer);
+            }
+            touchEndTimer = setTimeout(() => {
+                desiredDistortion = 0;
+                console.log('Touch end collapse');
+                move();
+                touchEndTimer = null;
+            }, 250);
+            
+            console.log('Touch end');
         }
 
         d.resize = function() {
